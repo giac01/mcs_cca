@@ -1,0 +1,605 @@
+---
+title: "CCA Analyses - Main Script"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+## Session Info 
+
+I ran the code in a docker container, for better repoducibility :) 
+
+Code to docker image:
+
+> docker run -d -p 8787:8787 -e PASSWORD=YOURPASSWORDHERE -v "/mnt/c/users/.../Paper 2 - Cumulative Risk/Analysis:/home/rstudio/" bignardig/rocker3.6.2:yb64s
+
+Note that the above code works when running ubuntu on windows using WSL2. The /mnt/ part in the path specifies the windows file system. 
+
+I also did the following (in WSL2 ubuntu):
+
+> docker exec -it CONTAINERID bash
+
+Then i run the following:
+
+> ulimit -s unlimited
+
+Most of my CCA analysis code has been moved to its own (in development) R package on github (ccatools), linked below. The code will pull a specific version of that package, so it will be completely reproducible in the future! 
+
+Note that if your running the code from a fresh rocker container, you need to do the following:
+
+> sudo apt-get update  
+sudo apt-get install libxml2
+sudo apt-get install zlib1g-dev
+sudo apt-get install libgsl-dev
+sudo apt-get install xclip 
+
+The last one is for clipr:: to work!
+
+
+
+```{r setup, include = FALSE}
+
+packages <- c("knitr","patchwork", "tidyverse", "devtools","patchwork","wesanderson")
+install.packages(setdiff(packages, rownames(installed.packages())))  
+
+
+rm(list=ls(all.names = TRUE))
+knitr::opts_chunk$set(cache = TRUE) 
+set.seed(10)
+```
+
+```{r}
+sessionInfo()
+```
+
+
+## Load Data, Functions and Libraries Required 
+
+```{r, warning=FALSE, results=FALSE, message=FALSE}
+source("Script P2S0 - Load Analysis Environment.R")
+
+# Load my own R (work in progress) R package for CCA analyses
+
+if (!("ccatools" %in% installed.packages())) {
+  devtools::install_github("giac01/ccatools@af914be1b99151a1b309150f8d2d5141c6ca83f5") #The @ specifies a specific commit (version) of the package on github
+}
+
+
+# library(usethis)
+# library(testthat)
+library(ccatools)
+library(tidyverse)
+library(patchwork)
+
+
+REPEATS_BOOT = 10000
+REPEATS_BOOT
+```
+
+## Number of participants
+
+```{r}
+
+DataSets = list(df0_imputed_group1,
+                df0_imputed_group2,
+                df0_imputed_BothGroups,
+                df0_imputed_Teach_group1,
+                df0_imputed_Teach_group2,
+                df0_imputed_Teach_BothGroups)
+
+sapply(DataSets,nrow) %>%
+  `names<-`(c("Training", "Testing", "Combined",
+              "Training Teach", "Testing Teach", "Combined Teach"))
+
+
+```
+
+
+## Analysis 0  - Hierarchial cluster analysis of variables
+
+To  aid visualisation, we cluster the predictor and outcome variables into 4 (5 groups including teacher metrics)
+
+```{r, echo=TRUE,results='hide',fig.keep='all'}
+distances = stats::dist(t(df0_imputed_BothGroups[,outcomes]), method="manhattan")
+  hclust_results = stats::hclust(distances)
+  Outcome_Order = hclust_results$order
+  Outcome_Ordered = outcomes[Outcome_Order]
+  Outcome_Labels_Ordered = outcomes_labels[Outcome_Order]
+  plot(hclust_results, hang=-1, main = "Hierarchial Clustering of Outcome Variables")
+  Outcome_Cluster = stats::cutree(hclust_results, 4)
+# sort(Outcome_Cluster)
+  Outcome_Cluster_Labels = Convert(Outcome_Cluster,1:4,c("Behavioural Problems","Mental Health", "Drug-Use", "Cognition"))
+
+# For ease of presentation, teacher's responses are not clustered in the usual way, but just tagged on to the above. 
+  Outcome_Cluster2 = c(rep(0,6),Outcome_Cluster)
+  Outcome_Ordered2 = c(outcomes2[1:6],Outcome_Ordered)
+  Outcome_Labels_Ordered2 = c(outcomes_labels2[1:6],Outcome_Labels_Ordered)
+  names(Outcome_Cluster2)[1:6] = outcomes2[1:6]
+  Outcome_Cluster_Labels2 = Convert(Outcome_Cluster2,0:4,c("Teacher Ratings","Behavioural Problems","Mental Health", "Drug-Use", "Cognition"))
+
+# not used in results  - but out of curiorsity looked at clustering all outcomes with teacher-reports
+# 
+#       hclust_results = hclust(dist(t(df0_imputed_Teach[,outcomes2]), method="manhattan"))
+#       plot(hclust_results, hang=-1)
+
+#Cluster Predictors
+distances = dist(t(df0_imputed_group1[,envvar]), method="manhattan")
+hclust_results = hclust(distances)
+envvar_Order = hclust_results$order
+envvar_Ordered = envvar[envvar_Order]
+envvar_Labels_Ordered = envvar_labels[envvar_Order]
+# plot(hclust_results, hang=-1)
+
+
+```
+
+## Analysis 1
+
+### Quick Check - does my cca function  give identical results to stats::cancor ? (the answer is yes)
+
+#### R output 
+
+cancor_Xweights & cancor_Yweights are the normalised (in the linear algebra sense) raw coefficients for a cca model in df0_imputed_group1 ! 
+
+```{r}
+cca_cancor = stats::cancor(x=scale(df0_imputed_group1[,envvar]), y=scale(df0_imputed_group1[,outcomes]))
+
+
+  cancor_Xweights = apply(cca_cancor$xcoef,2, function(x) x/sqrt(sum(x^2)))
+  cancor_Yweights = apply(cca_cancor$ycoef,2, function(x) x/sqrt(sum(x^2)))
+
+cca_cancor$cor[1:10]
+cancor_Xweights[1:5,1:5]
+
+```
+
+#### ccatools::.cca output 
+
+Result is the same apart from sign difference in loadings, which is why some negative canonical correlations exist when looking at correlations between variate scores. 
+
+```{r}
+
+cca_group1 = ccatools::.cca(X_FIT  = as.matrix(df0_imputed_group1[envvar]),                                               # Data frame of predictor variables (Environmental Risk Factors) from TRAINING dataset
+                            Y_FIT  = as.matrix(df0_imputed_group1[outcomes]))
+cca_group1$cc_fit
+#gb_test$cc_pred
+cca_group1$xcoef[1:5,1:5]
+
+rm(cca_group1)
+
+```
+
+We can flip the sign loadings by rotated the weights to align to the R output: 
+
+```{r}
+
+cca_group1 = ccatools::.cca( 
+                     X_FIT  = as.matrix(df0_imputed_group1[envvar]),                                               # Data frame of predictor variables (Environmental Risk Factors) from TRAINING dataset
+                     Y_FIT  = as.matrix(df0_imputed_group1[outcomes]),
+                     ProcrustX = cancor_Xweights[,1:22],
+                     ProcrustY = cancor_Yweights[,1:22],
+                     ncomp=22
+              )
+cca_group1$cc_fit
+#gb_test$cc_pred
+cca_group1$xcoef[1:5,1:5]
+
+
+```
+
+### Run split half analyses 
+
+Fit Model in training dataset, and then generate canonical variates for testing dataset, and plot correlations between them. 
+
+Figure:
+Below diagonical we have correlations between canonical variates. X1-X10 are latent factors extracted from predictor variables, and Y1-Y10 are latent factors extracted from outcome variables. 
+
+```{r, fig.width=8, fig.height=8}
+#gb_CCA is defined in script P2S2! 
+NVARIATES = 10 # Number of variates to extract 
+
+cca_splithalf_noprocrustes = ccatools::cca_splithalf(
+              X_FIT  = df0_imputed_group1[envvar],                                               # Data frame of predictor variables (Environmental Risk Factors) from TRAINING dataset
+              Y_FIT  = df0_imputed_group1[outcomes],                                             # Data frame of Outcome Variables from TRAINING dataset
+              X_PRED = df0_imputed_group2[envvar],                                               # Data frame of predictor variables (Environmental Risk Factors) from TEST dataset
+              Y_PRED = df0_imputed_group2[outcomes],                                             # Data frame of Outcome variables from TEST dataset
+              ncomp = NVARIATES)                                                                 # Number of canonical variates to extract  
+
+PlotCorrelationMatrix(cca_splithalf_noprocrustes$model_results$variates, includeN = FALSE, na.color = "white")
+```
+
+Because it gets confusing to interpret negative correlations (as most raw variables have been coded so that higher == better), we can flip the extracted CCA loadings to ensure that canonical correlations will be positive. 
+
+An easy way to do this given how the function is coded is to make sure the extracted loadings match the stats::cancor output which automatically corrects for this... 
+
+```{r, fig.width=6, fig.height=6}
+NVARIATES = 22 
+NVARIATES_Plot = 8
+cca_splithalf_procrustes = 
+              ccatools::cca_splithalf(
+              X_FIT  =      df0_imputed_group1[envvar],                                               # Data frame of predictor variables (Environmental Risk Factors) from TRAINING dataset
+              Y_FIT  =      df0_imputed_group1[outcomes],                                             # Data frame of Outcome Variables from TRAINING dataset
+              X_PRED =      df0_imputed_group2[envvar],                                               # Data frame of predictor variables (Environmental Risk Factors) from TEST dataset
+              Y_PRED =      df0_imputed_group2[outcomes],                                             # Data frame of Outcome variables from TEST dataset
+              ProcrustX =   cancor_Xweights[,1:NVARIATES],                                                      # Target matrices used to rotate loadings using procrustes function. 
+              ProcrustY =   cancor_Yweights[,1:NVARIATES],
+              ncomp  =      NVARIATES)                                                                # Number of canonical variates to extract 
+
+Variates_Plot = cca_splithalf_procrustes$model_results$variates
+  colnames(Variates_Plot) = c(paste0("ERF ",1:NVARIATES), paste0("Outcome ",1:NVARIATES))
+
+# Correlation Plot of first 8 variates
+
+Variates_Correlation_Test = 
+  Variates_Plot %>% 
+    dplyr::select(dplyr::matches("[ ][1-8]{1}$")) %>%
+    PlotCorrelationMatrix(., includeN = FALSE)
+
+Variates_Correlation_Test
+
+save(cca_splithalf_procrustes, file=file.path("Output R Data", "cca_splithalf.Rdata"))
+ggsave(file.path("Plots","Variates_Correlation_Test.pdf"), plot=Variates_Correlation_Test, device="pdf", width=6, height=6)
+```
+
+
+### Plot Variate Scores
+
+```{r}
+# 
+# Variates_Plot$id = 1:nrow(Variates_Plot)
+# Variates_Plot_long = tidyr::pivot_longer(Variates_Plot, id)
+library(patchwork)
+
+Plot1=
+ggplot(data=Variates_Plot, aes(x=`ERF 1`, y=`Outcome 1`)) + 
+  geom_point(alpha=.4, shape=16) + 
+  jtools::theme_apa() + coord_fixed() +
+  labs(x="1st CCA Environmental Risk Factor Latent Variable",
+       y="1st CCA Outcome Latent Variable") 
+
+Plot2=
+ggplot(data=Variates_Plot, aes(x=`ERF 2`, y=`Outcome 2`)) + 
+  geom_point(alpha=.4, shape=16) + 
+  jtools::theme_apa() + coord_fixed() +
+  labs(x="2nd CCA Environmental Risk Factor Latent Variable",
+       y="2nd CCA Outcome Latent Variable") 
+
+Plot3=
+ggplot(data=Variates_Plot, aes(x=`ERF 3`, y=`Outcome 3`)) + 
+  geom_point(alpha=.4, shape=16) + 
+  jtools::theme_apa() + coord_fixed() +
+  labs(x="3rd CCA Environmental Risk Factor Latent Variable",
+       y="3rd CCA Outcome Latent Variable") 
+
+plot_combined = Plot1 + Plot2 + Plot3 
+
+ggsave(file.path("Plots","CanonicalCorrelations.png"), plot=plot_combined, device="png", width=12, height=7, dpi=600)
+
+```
+
+
+### Latent Variable (Variate) score correlations within the training sample
+
+I've plotted this here as it nicely illustrates how CCA works! 
+
+```{r, fig.width=6, fig.height=6}
+NVARIATES = 8
+
+Variates_Plot = cca_group1$variates[,c(paste0("X",1:NVARIATES),paste0("Y",1:NVARIATES))]
+  colnames(Variates_Plot) = c(paste0("ERF ",1:NVARIATES), paste0("Outcome ",1:NVARIATES))
+
+Variates_Correlation_Train = 
+PlotCorrelationMatrix(Variates_Plot, includeN = FALSE, zerotext = "0", aligntext = FALSE)
+
+Variates_Correlation_Train
+
+ggsave(file.path("Plots","Variates_Correlation_Train.pdf"), plot=Variates_Correlation_Train, device="pdf", width=6, height=6)
+
+
+```
+
+### Correlation Matrix of all raw data
+
+```{r, fig.width=10, fig.height=10}
+plot_data = df0_imputed_BothGroups[c(envvar[envvar_Order],outcomes[Outcome_Order])  ]
+  colnames(plot_data) = c(envvar_labels[envvar_Order],outcomes_labels[Outcome_Order])
+gp = PlotCorrelationMatrix(plot_data, includeN = FALSE, textadjust = 1.3)
+gp
+
+#Export File 
+ggsave(file.path("Plots","SupplementaryFigure1.pdf"), plot=gp, device="pdf", width=10, height=10)
+ggsave(file.path("Plots","SupplementaryFigure1.png"), plot=gp, device="png", width=10, height=10, dpi=600)
+
+rm(gp,plot_data)
+
+plot_data = df0_imputed_Teach_BothGroups[c(envvar[envvar_Order],Outcome_Ordered2)  ]
+  colnames(plot_data) = c(envvar_labels[envvar_Order],
+                          outcomes_labels2[match(Outcome_Ordered2,outcomes2)])
+gp = PlotCorrelationMatrix(plot_data, includeN = FALSE, textadjust = 1.3)
+gp
+
+
+ 
+ 
+#Export File 
+ggsave(file.path("Plots","SupplementaryFigure2.pdf"), plot=gp, device="pdf", width=10, height=10)
+ggsave(file.path("Plots","SupplementaryFigure2.png"), plot=gp, device="png", width=10, height=10, dpi=600)
+
+rm(gp,plot_data)
+```
+
+### Correlation matrix with no numbers
+
+```{r, fig.width=5, fig.height=5}
+
+   #Function which creates a correlation matrix plot of variables - without any labels 
+    PlotCorrelationMatrix_reduced = function(dat, Variables_Labels=NULL, textadjust=2){
+      Variables = colnames(dat)
+      if(is.null(Variables_Labels)){
+        Variables_Labels = colnames(dat)
+      }
+      
+      
+      matrix_scores = dat
+      Mat_Cor =gsub("^0","",gsub("^ +","",gsub("^-0","-", format(cor(matrix_scores, use="pairwise.complete.obs"), digits=0, nsmall=2)))) #Correlation matrix
+      Mat_Cor_fill = abs(cor(matrix_scores, use="pairwise.complete.obs"))  #Correlation matrix for table fill 
+      Mat_Cor_fill[lower.tri(Mat_Cor_fill,diag = TRUE)]=NA
+      
+      #Matrix on Ns per comparison - lower triag 
+      Mat_N = sapply(Variables, function(x) 
+        sapply(Variables, function(y)
+          nrow(na.omit(data.frame(dat[,unique(c(x,y))])))
+        )) 
+      
+      #Create Dataframe For Ggplot to Read 
+      PlotMat = Mat_Cor
+      PlotMat[lower.tri(PlotMat, diag=TRUE)]=""
+      colnames(PlotMat) = Variables_Labels ;  rownames(PlotMat) = Variables_Labels
+      
+      PlotMat = data.frame(reshape2::melt(PlotMat), stringsAsFactors = FALSE)
+      head(PlotMat)
+      
+      PlotMat$value = (as.character(PlotMat$value))
+      PlotMat$ValueFill = as.numeric(t(c(Mat_Cor_fill)))
+      PlotMat$Var2 = factor(PlotMat$Var2, levels=rev(levels(PlotMat$Var2)))
+      
+      
+      
+      OutPlot = 
+        ggplot(data = PlotMat, aes(x=Var1, y=Var2,fill=ValueFill))+# + geom_point(aes(size=value^2,alpha=value^4))+
+        geom_tile() + labs(x=NULL, y=NULL) +
+         jtools::theme_apa() +
+        #scale_fill_brewer(palette=1,na.value="grey")+
+        scale_fill_continuous(na.value="white",low="#EDCB64", high="#B62A3D")+ 
+        theme(legend.position = "#DAECED") + 
+        theme(axis.title=element_blank(),
+                    axis.text=element_blank(),
+                    axis.ticks=element_blank()) + coord_fixed()
+      
+      OutPlot
+      
+      return(OutPlot)
+    }
+    
+plot_data = df0_imputed_BothGroups[c(envvar[envvar_Order],outcomes[Outcome_Order])  ]
+  # cbind.data.frame(c(envvar_labels[envvar_Order],outcomes_labels[Outcome_Order]),colnames(plot_data))
+  colnames(plot_data) = c(envvar_labels[envvar_Order],outcomes_labels[Outcome_Order])
+gp2 = PlotCorrelationMatrix_reduced(plot_data, textadjust = 1.3)
+gp2
+
+#Export File 
+ggsave(file.path("Plots","CorMat_BothGroups_NONUM.pdf"), plot=gp2, device="pdf", width=5, height=5)
+rm(gp2,plot_data)
+```
+
+### Canonical Correlation point-estimates, CIs, p-values
+
+
+```{r}
+
+
+format(cca_splithalf_procrustes$combined_cc, digits=0, nsmall=5)
+
+
+
+
+```
+
+
+
+```{r}
+
+# NVARIATES = 15
+# 
+# cca_splithalf_CI = 
+#               gb_CCA_splithalf(
+#               X_FIT  = df0_imputed_group1[envvar],                                               # Data frame of predictor variables (Environmental Risk Factors) from TRAINING dataset
+#               Y_FIT  = df0_imputed_group1[outcomes],                                             # Data frame of Outcome Variables from TRAINING dataset
+#               ProcrustX = cancor_Xweights[,1:NVARIATES],                                         # Rotated the weights JUST so that  
+#               ProcrustY = cancor_Yweights[,1:NVARIATES],
+#               X_PRED = df0_imputed_group2[envvar],                                               # Data frame of predictor variables (Environmental Risk Factors) from TEST dataset
+#               Y_PRED = df0_imputed_group2[outcomes],
+#               ncomp=NVARIATES)
+# 
+# 
+# # Internal check for giacomo - check that rotating the results JUST impacts the sign of the canonical correlations & CI
+# cca_splithalf_CI_old = 
+#               gb_CCA_splithalf(
+#               X_FIT  = df0_imputed_group1[envvar],                                               # Data frame of predictor variables (Environmental Risk Factors) from TRAINING dataset
+#               Y_FIT  = df0_imputed_group1[outcomes],                                             # Data frame of Outcome Variables from TRAINING dataset
+#               ProcrustX = NULL,                                        # Target matrices used to rotate loadings using procrustes function. 
+#               ProcrustY = NULL,
+#               X_PRED = df0_imputed_group2[envvar],                                               # Data frame of predictor variables (Environmental Risk Factors) from TEST dataset
+#               Y_PRED = df0_imputed_group2[outcomes],
+#               ncomp=NVARIATES)
+# 
+
+
+
+# save(cca_splithalf_CI, file=file.path("Output R Data", "cca_splithalf_CI.Rdata"))
+# round(cca_splithalf_CI$combined_cc*100)/100
+
+```
+
+
+
+## Analysis 2 - CCA loadings and bootstrap estimates of consistency
+
+### Run Model 
+
+```{r, results=FALSE}
+timeA = base::Sys.time()
+
+NVARIATES = 4
+cca_boot = ccatools::coef_boot(
+              X_FIT  = df0_imputed_group1[envvar],                                               # Data frame of predictor variables (Environmental Risk Factors) from TRAINING dataset
+              Y_FIT  = df0_imputed_group1[outcomes],                                             # Data frame of Outcome Variables from TRAINING dataset
+              ProcrustX = cancor_Xweights[,1:NVARIATES],                                        # Target matrices used to rotate loadings using procrustes function. 
+              ProcrustY = cancor_Yweights[,1:NVARIATES],
+              ncomp  = NVARIATES,                                                                        # Number of variates (latent factors) to extract from X and Y matrices 
+              Nboot  =  REPEATS_BOOT                                                         # Number of bootstrap resamples to take (REPEATS_BOOT is defined at the top of the script)
+              )  
+
+save(cca_boot, file=file.path("Output R Data", "cca_boot.Rdata"))
+
+timeB = base::Sys.time()
+
+timeB-timeA
+
+```
+
+### print CCA weights 
+
+
+#### CCA confidence intervals
+
+```{r}
+
+cca_boot$ycoef_Quantiles
+
+xcoef_Quantiles = cca_boot$xcoef_Quantiles
+
+# Shortening row names for easier printing! 
+for (i in 1:length(xcoef_Quantiles)){
+  rownames(xcoef_Quantiles[[i]]) = substr(rownames(xcoef_Quantiles[[i]]),1,26)
+}
+xcoef_Quantiles
+
+
+```
+
+
+#### CCA Weights (training dataset) 
+
+```{r}
+XWeights = cca_group1$xcoef
+rownames(XWeights) = substr(envvar_labels,1,26)
+colnames(XWeights) = paste0("LV ",1:ncol(XWeights))
+
+XWeights[,1:4]
+```
+
+#### CCA Weights (testing dataset) 
+
+```{r}
+YWeights = cca_group1$ycoef
+rownames(YWeights) = outcomes_labels
+colnames(YWeights) = paste0("LV ",1:ncol(YWeights))
+YWeights[,1:4]
+
+```
+
+
+## Run same analyses on teacher dataset
+
+```{r}
+
+NVARIATES = 22 
+
+set.seed(101)
+
+cca_cancor_teach = stats::cancor(x=scale(df0_imputed_Teach_group1[,envvar]),
+                                 y=scale(df0_imputed_Teach_group1[,outcomes2])
+                                 )
+
+  cancor_Xweights_teach = apply(cca_cancor_teach$xcoef,2, function(x) x/sqrt(sum(x^2)))
+  cancor_Yweights_teach = apply(cca_cancor_teach$ycoef,2, function(x) x/sqrt(sum(x^2)))
+
+# Run Split Half 
+cca_splithalf_teacher = ccatools::cca_splithalf(
+              X_FIT  =      df0_imputed_Teach_group1[,envvar],                                               # Data frame of predictor variables (Environmental Risk Factors) from TRAINING dataset
+              Y_FIT  =      df0_imputed_Teach_group1[,outcomes2],                                             # Data frame of Outcome Variables from TRAINING dataset
+              X_PRED =      df0_imputed_Teach_group2[,envvar],                                               # Data frame of predictor variables (Environmental Risk Factors) from TEST dataset
+              Y_PRED =      df0_imputed_Teach_group2[,outcomes2],                                             # Data frame of Outcome variables from TEST dataset
+              ProcrustX = cancor_Xweights_teach[,1:NVARIATES],                                        # Target matrices used to rotate loadings using procrustes function. 
+              ProcrustY = cancor_Yweights_teach[,1:NVARIATES],
+              ncomp  =      NVARIATES)                                                                # Number of canonical variates to extract
+
+
+Variates_Plot = 
+cca_splithalf_teacher$model_results$variates %>% 
+    dplyr::select(dplyr::matches("[X|Y][1-8]{1}$")) %>%
+    `colnames<-` (c(paste0("ERF ",1:8), paste0("Outcome ",1:8))) %>% 
+    PlotCorrelationMatrix(., includeN = FALSE)
+
+Variates_Plot
+
+save(cca_splithalf_teacher, file=file.path("Output R Data", "cca_splithalf_teacher.Rdata"))
+
+```
+
+#### CCA Weights (teacher dataset) 
+
+```{r}
+
+XWeights = cca_splithalf_teacher$model_results$xcoef
+rownames(XWeights) = substr(envvar_labels,1,26)
+colnames(XWeights) = paste0("LV ",1:ncol(XWeights))
+XWeights[,1:4]
+
+
+YWeights = cca_splithalf_teacher$model_results$ycoef
+rownames(YWeights) = substr(outcomes_labels2,1,26)
+colnames(YWeights) = paste0("LV ",1:ncol(YWeights))
+YWeights[,1:4]
+
+
+```
+
+
+#### Split half cca results (teacher dataset)
+
+```{r}
+
+format(cca_splithalf_teacher$combined_cc, digits=0, nsmall=5)
+
+```
+
+
+
+### Bootstrap resampling on teaching data 
+
+
+```{r, results=FALSE}
+timeA = base::Sys.time()
+
+NVARIATES = 4                                                                                 #This is lower to reduce risk of bias! 
+cca_boot_teach = ccatools::coef_boot(
+              X_FIT  = df0_imputed_Teach_BothGroups[envvar],                                               # Data frame of predictor variables (Environmental Risk Factors) from TRAINING dataset
+              Y_FIT  = df0_imputed_Teach_BothGroups[outcomes2],                                             # Data frame of Outcome Variables from TRAINING dataset
+              ProcrustX = cancor_Xweights_teach[,1:NVARIATES],                                        # Target matrices used to rotate loadings using procrustes function. 
+              ProcrustY = cancor_Yweights_teach[,1:NVARIATES],
+              ncomp  = NVARIATES,                                                                        # Number of variates (latent factors) to extract from X and Y matrices 
+              Nboot  =  REPEATS_BOOT                                                         # Number of bootstrap resamples to take (REPEATS_BOOT is defined at the top of the script)
+              )  
+
+save(cca_boot_teach, file=file.path("Output R Data", "cca_boot_teach.Rdata"))
+
+
+timeB = base::Sys.time()
+
+timeB-timeA
+
+```

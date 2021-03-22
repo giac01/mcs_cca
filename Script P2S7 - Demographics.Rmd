@@ -1,0 +1,391 @@
+---
+title: "Demographic Information"
+output: html_notebook
+---
+
+## Load Data
+
+
+```{r}
+
+library(patchwork)
+library(tidyverse)
+# library(ggplot2)
+
+rm(list=ls())
+OUPUTDATA_LOCATION = file.path(getwd(),"Data/MCS Data/Processed Data")
+
+# Load Original Data 
+load(file.path(OUPUTDATA_LOCATION,"/DataWithExclusionsNoImputations/df0_BothGroups_FINAL.Rdata"))
+
+
+```
+
+### Ethnicity
+
+Cleaning required. They report ethnicity differently in Englamdf
+
+```{r}
+
+df0 = df0_BothGroups
+Ethnicity_England = df0$S2_Ethnicity_England_BDCEEAA0 %>% 
+                    dplyr::recode(   
+                                  `1` = "White",
+                                  `2` = "White",
+                                  `3` = "White",
+                                  
+                                  `4` = "Mixed",
+                                  `5` = "Mixed",
+                                  `6` = "Mixed",
+                                  `7` = "Mixed",
+                                  
+                                  `8` = "Indian",
+                                  `9` = "Pakistani",
+                                  `10` = "Bangladeshi",
+                                  `11` = "Other",
+                                  
+                                  `12` = "Black",
+                                  `13` = "Black",
+                                  `14` = "Black",
+                                  
+                                  `15` = "Chinese",
+                                  
+                                  `95` = "Other",
+                                  )
+
+Ethnicity_Wales = df0$S2_Ethnicity_Wales_BDCEWAA0 %>% 
+                    dplyr::recode(   
+                                  `1` = "White",
+                                  `2` = "White",
+                                  `3` = "White",
+                                  `4` = "White",
+                                  
+                                  `5` = "Mixed",
+                                  `6` = "Mixed",
+                                  `7` = "Mixed",
+                                  `8` = "Mixed",
+                                  
+                                  `9` = "Indian",
+                                  `10` = "Pakistani",
+                                  `11` = "Bangladeshi",
+                                  `12` = "Other",
+                                  
+                                  `13` = "Black",
+                                  `14` = "Black",
+                                  `15` = "Black",
+                                  
+                                  `16` = "Chinese",
+                                  
+                                  `95` = "Other",
+                                  )
+Ethnicity_Scotland = df0$S2_Ethnicity_Scotland_BDCESAA0 %>% 
+                    dplyr::recode(   
+                                  `1` = "White",
+                                  `2` = "White",
+                                  `3` = "White",
+                                  `4` = "White",
+                                  
+                                  `5` = "Mixed",
+                                  
+                                  `6` = "Indian",
+                                  `7` = "Pakistani",
+                                  `8` = "Bangladeshi",
+                                  
+                                  `9` = "Chinese",
+                                  
+                                  `10` = "Other",
+                                  
+                                  `11` = "Black",
+                                  `12` = "Black",
+                                  `13` = "Black",
+                                  
+                                  `95` = "Other",
+                                  )
+
+
+Ethnicity_NI = df0$S2_Ethnicity_NI_BDCENAA0 %>% 
+                    dplyr::recode(   
+                                  `1` = "White",
+                                  
+                                  `2` = "Chinese",
+                                  
+                                  `3` = "White",
+                                  `4` = "White",
+                                  
+                                  `5` = "Mixed",
+                                  
+                                  `6` = "Indian",
+                                  `7` = "Pakistani",
+                                  `8` = "Bangladeshi",
+                                  
+                                  `9` = "Chinese",
+                                  
+                                  `10` = "Other",
+                                  
+                                  `11` = "Black",
+                                  `12` = "Black",
+                                  `13` = "Black",
+                                  
+                                  `95` = "Other",
+                                  )
+Ethnicity_Matrix_original = 
+                  cbind(
+                    df0$S2_Ethnicity_England_BDCEEAA0,
+                    df0$S2_Ethnicity_Wales_BDCEWAA0,
+                    df0$S2_Ethnicity_Scotland_BDCESAA0,
+                    df0$S2_Ethnicity_NI_BDCENAA0
+                  )
+
+
+Ethnicity_Matrix = cbind(Ethnicity_England,
+                         Ethnicity_Wales,
+                         Ethnicity_Scotland,
+                         Ethnicity_NI)
+
+# Ethnicity_Matrix %>%
+#   apply(., 1, function(x) length(which(!is.na(x)))) %>%
+#   table()
+
+Country = Ethnicity_Matrix %>% 
+            apply(.,1, function(x) which(!is.na(x))) %>%
+            unlist()
+
+Ethnicity = Ethnicity_Matrix %>% 
+            apply(., 1, function(x) as.vector(na.omit(x))[1]) 
+
+# Ethicity = Ethnicity_Matrix[]
+
+
+
+# Check i haven't missed any codes 
+# Ethnicity_Matrix_original %>%
+#   as.data.frame() %>%
+#   slice(which(apply(Ethnicity_Matrix,1,function(x) length(which(!is.na(x))))==0)) %>%
+#   unlist(c(t(.))) %>%
+#   table()
+
+```
+
+Table of ethnicity percentages. Note that there are missing values for `r length(which(is.na(Ethnicity)))` participants. 
+
+```{r}
+
+EthnicityTbl =
+  Ethnicity %>% 
+    table() %>% 
+    data.frame() %>%
+    dplyr::arrange(Freq) %>%
+    dplyr::mutate(Percent = format(Freq/sum(Freq), nsmall=4,digits=0))
+
+EthnicityTbl
+
+```
+
+
+### Age
+
+I couldn't find child age at interview data for MCS1 in the MCS1 data release, but it provided in harmonised BMI data release, with some missing data. 
+
+For sweeps 5 & 6 I'm only given month/year of interview and birth, which may explain some odd looking peaks in the data.
+
+```{r}
+
+Age_Matrix = df0_BothGroups %>%
+            dplyr::select(S1 = S1_Health_Age, S2=S2_Age, S5=S5_AgeAtInterview, S6=S6_Age_Est) %>%
+            tidyr::pivot_longer(cols=S1:S6, values_to = "Age") 
+            
+AgePlot = 
+ggplot(Age_Matrix, aes(x=Age)) + 
+  geom_histogram(bins=150) + 
+  jtools::theme_apa() + 
+  labs(title="Child Age over the four MCS Sweeps",y="Frequency", x="Age At Interview") + 
+  scale_x_continuous(minor_breaks =seq(0,16,by=.5),breaks=seq(0,16,by=1), labels=seq(0,16,by=1))
+
+AgePlot
+ggsave(file=file.path("Plots","AgeMCS.png"), device="png", width=6, height=3)
+
+AgePlotTrimmed = 
+  AgePlot + coord_cartesian(y=c(0,2000))
+
+ggsave(plot=AgePlotTrimmed,file=file.path("Plots","AgeMCS_trimmed.png"), device="png", width=6, height=3)
+```
+
+
+#### Child Age Table
+
+```{r}
+
+Age_Matrix %>% 
+  dplyr::group_by(name) %>%
+  summarise(mean=mean(Age, na.rm=TRUE), 
+            sd=sd(Age, na.rm=TRUE), 
+            N_NotMissing = length(which(!is.na(Age))))
+
+
+
+```
+
+### Gender
+
+
+```{r}
+
+colnames(df0_BothGroups)[grepl("imd",tolower(colnames(df0_BothGroups)))]
+
+df0_BothGroups %>%
+  dplyr::select(S1_Main_Sex,S2_Sex_bhcsex00,S2_Sex,S5_Sex_ECCSEX00) %>%
+  tidyr::pivot_longer(cols=S1_Main_Sex:S5_Sex_ECCSEX00) %>%
+  dplyr::group_by(name) %>%
+  summarise(N_NotMissing = length(which(!is.na(value))))
+  
+df0_BothGroups %>% 
+  dplyr::summarise(N_Male = length(which(S2_Sex_bhcsex00==1)),
+                   N_Female = length(which(S2_Sex_bhcsex00==2)),
+                   Percent_Male = N_Male /(N_Male + N_Female),
+                   Percent_Female = N_Female /(N_Male + N_Female)
+                   )
+  
+  table(.) %>%
+  `names<-` (c("male", "female"))
+
+```
+
+
+### Geographic Data
+
+Interview Country
+
+```{r}
+S1Geo = fread("Data/MCS Data/Raw Data/UKDA-4683-tab MCS1/tab/mcs1_geographically_linked_data.tab", stringsAsFactors = FALSE, data.table = FALSE)
+S1Geo = S1Geo[match(df0_BothGroups$MCSID, S1Geo$mcsid),]
+
+S1Geo %>%
+  dplyr::mutate(country_new = dplyr::recode(aactry00,
+                `1` = "England",
+                `2` = "Wales",
+                `3` = "Scotland",
+                `4` = "Northern Ireland")) %>%
+  group_by(country_new) %>% 
+  summarise(N=n()) %>% 
+  mutate(Perc = round(N/sum(N), digits=4))
+
+```
+
+### Who were the responders in the first and second sweep of the study?
+
+```{r}
+
+ResponderTable = 
+df0_BothGroups %>% 
+  dplyr::select(S1_Main_Identity_AMDRES00,S2_Main_Identity_BMDRES00) %>%
+  tidyr::pivot_longer(cols=S1_Main_Identity_AMDRES00:S2_Main_Identity_BMDRES00) %>%
+  mutate(value = dplyr::recode(value, 
+                               `1`= "Natural Mother",
+                               `2`= "Natural Father",
+                               `3`= "Adoptive Mother",
+                               `5`= "Foster Mother",
+                               `6`= "Foster Father",
+                               `9`= "Grandmother")) %>% 
+  dplyr::group_by(name) %>%
+  summarise(N_Mother = length(which(value== "Natural Mother")),
+            N_Father = length(which(value== "Natural Father")),
+            N_Adoptive_Mother = length(which(value== "Adoptive Mother")),
+            N_Foster_Mother = length(which(value== "Foster Mother")),
+            N_Fother_Father = length(which(value== "Foster Father")),
+            N_Grandmother = length(which(value== "Grandmother")),
+            ) %>%
+  dplyr::select(-name) %>%
+  t() %>% 
+  `colnames<-`((c("S1","S2"))) %>%
+  dplyr::as_tibble(rownames = NA) %>%
+  rownames_to_column() %>%
+  mutate(S1_Percent = round(S1/sum(S1),4),
+         S2_Percent = round(S2/sum(S2),3)) 
+  
+ResponderTable
+    
+
+
+# table(df0_BothGroups$S1_Main_Identity_AMDRES00)
+# table(df0_BothGroups$S2_Main_Identity_BMDRES00)
+
+
+```
+
+### Responder Education Level 
+
+Missing responder data for S1 is `r length(which(is.na(df0_BothGroups$S1_SES_EducationMain_AMDNVQ00) | df0_BothGroups$S1_SES_EducationMain_AMDNVQ00==-1 ))` and for S2 is `r length(which(is.na(df0_BothGroups$S2_Main_Education_BMDNVQ00) | df0_BothGroups$S2_Main_Education_BMDNVQ00==-1 ))`
+
+```{r}
+S1_Qualifications =
+table(df0_BothGroups$S1_SES_EducationMain_AMDNVQ00) %>%
+  .[-1] %>%
+  `names<-`((c(paste0("NVQ Level ",1:5),"Other Qualification","No Qualifications"))) %>%
+  rbind(., (./sum(.)) ) %>%
+  rbind.data.frame(., cumsum(.[2,])) %>%
+  `rownames<-`(c("freq", "prob", "cumprob"))
+
+
+S2_Qualifications =
+table(df0_BothGroups$S2_Main_Education_BMDNVQ00) %>%
+  .[-1] %>%
+  `names<-`((c(paste0("NVQ Level ",1:5),"Other Qualification","No Qualifications"))) %>%
+  rbind(., (./sum(.)) ) %>%
+  rbind.data.frame(., cumsum(.[2,])) %>%
+  `rownames<-`(c("freq", "prob", "cumprob"))
+
+S1_Qualifications
+S2_Qualifications
+
+```
+
+
+
+### Employment Level
+
+```{r}
+
+S1Der = fread("Data/MCS Data/Raw Data/UKDA-4683-tab MCS1/tab/mcs1_derived_variables.tab", stringsAsFactors = FALSE, data.table = FALSE)
+S1Der = S1Der[match(df0_BothGroups$MCSID, S1Der$MCSID),]
+
+S1Der %>%
+  dplyr::mutate(S1_Main_Employ = dplyr::recode(AMD07C00,
+                                               `1` = "Hi manag/prof",
+                                               `2` = "Lo manag/prof",
+                                               `3` = "Intermediate",
+                                               `4` = "Small emp and s-emp",
+                                               `5` = "Low sup and tech",
+                                               `6` = "Semi routine",
+                                               `7` = "Routine",
+                                               `-1` = "Not Applicaable",
+                                               )) %>%
+  ggplot(.,aes(x=S1_Main_Employ)) + 
+  geom_bar() + 
+  geom_text(stat='count', aes(label=..count..), vjust=-1) + 
+  jtools::theme_apa() +
+  labs(title="NS-SEC 7 (last known job) of Main Respondent at First Sweep", x=NULL, y="Count") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+  ylim(c(0000,3200))
+
+S1Der$AMD07C00 %>%
+  table() %>%
+  rbind(., (./sum(.)) ) %>%
+  rbind.data.frame(., cumsum(.[2,])) %>%
+  `rownames<-`(c("freq", "prob", "cumprob")) %>%
+  `colnames<-`(c("Not Applicaable","Hi manag/prof","Lo manag/prof","Intermediate","Small emp and s-emp","Low sup and tech","Semi routine","Routine")) %>%
+  format(.,nsmall=5,digits=0)
+  
+  
+
+```
+
+
+# Proportion of productive families in S5 & S6 excluded from analyses
+
+```{r}
+
+
+
+
+
+```

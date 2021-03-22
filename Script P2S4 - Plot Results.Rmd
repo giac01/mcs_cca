@@ -1,0 +1,564 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+### Load data 
+
+```{r, warning=FALSE, results=FALSE, message=FALSE}
+
+rm(list=ls())
+source("Script P2S0 - Load Analysis Environment.R")
+load(file.path("Output R Data", "cca_boot.Rdata"))
+load(file.path("Output R Data", "cca_splithalf.Rdata"))
+load(file.path("Output R Data", "cca_boot_teach.Rdata"))
+load(file.path("Output R Data", "cca_splithalf_teacher.Rdata"))
+
+```
+
+
+# Analysis 0  - Hierarchial cluster analysis of variables
+
+To simply aid visualisation, we have cluster the predictor and outcome variables into 4 (5 groups including teacher metrics)
+
+```{r, echo=TRUE,results='hide',fig.keep='all'}
+
+distances = stats::dist(t(df0_imputed_BothGroups[,outcomes]), method="manhattan")
+  hclust_results = stats::hclust(distances)
+  Outcome_Order = hclust_results$order
+  Outcome_Ordered = outcomes[Outcome_Order]
+  Outcome_Labels_Ordered = outcomes_labels[Outcome_Order]
+  plot(hclust_results, hang=-1, main = "Hierarchial Clustering of Outcome Variables")
+  Outcome_Cluster = stats::cutree(hclust_results, 4)
+# sort(Outcome_Cluster)
+  Outcome_Cluster_Labels = Convert(Outcome_Cluster,1:4,c("Behavioural Problems","Mental Health", "Drug-Use", "Cognition"))
+
+# For ease of presentation, teacher's responses are not clustered in the usual way, but just tagged on to the above. 
+  Outcome_Cluster2 = c(rep(0,6),Outcome_Cluster)
+  Outcome_Ordered2 = c(outcomes2[1:6],Outcome_Ordered)
+  Outcome_Labels_Ordered2 = c(outcomes_labels2[1:6],Outcome_Labels_Ordered)
+  names(Outcome_Cluster2)[1:6] = outcomes2[1:6]
+  Outcome_Cluster_Labels2 = Convert(Outcome_Cluster2,0:4,c("Teacher Ratings","Behavioural Problems","Mental Health", "Drug-Use", "Cognition"))
+
+# not used in results  - but out of curiorsity looked at clustering all outcomes with teacher-reports
+# 
+#       hclust_results = hclust(dist(t(df0_imputed_Teach[,outcomes2]), method="manhattan"))
+#       plot(hclust_results, hang=-1)
+
+#Cluster Predictors
+distances = dist(t(df0_imputed_group1[,envvar]), method="manhattan")
+hclust_results = hclust(distances)
+envvar_Order = hclust_results$order
+envvar_Ordered = envvar[envvar_Order]
+envvar_Labels_Ordered = envvar_labels[envvar_Order]
+# plot(hclust_results, hang=-1)
+
+
+```
+
+### Plot All Outcomes
+
+```{r}
+pdf(file=file.path("Plots","histograms_variables_combined.pdf"),height=40, width=15)
+par(mfrow=c(30,5), mar=c(1,1,3,1))
+for (i in c(envvar, outcomes)){
+    hist(df0_imputed_BothGroups[,i], main=i, col="grey")
+  }
+dev.off()
+
+
+
+
+
+```
+
+
+### Figure 2
+
+note to giacomo - fix axes! 
+
+```{r}
+PlotLoadings = function(dat, recode=FALSE, titletext=""){
+  
+  if (recode){
+    dat = dat*-1
+  }
+
+  dat$negative = dat$original<0
+  # dat[!dat$negative,1:4]=dat[!dat$negative,1:4]*-1
+  dat$FancyLabels = all_var_labels2[match(rownames(dat),all_var2)]
+  # dat$Group = factor(as.numeric(grepl("S[5-6]",dat$varlabel)), labels=c("Environmental Predictors","Outcome"))
+  dat = dat[order(abs(dat$original)),]
+  
+  dat$errormin = dat$X2.5.
+    dat$errormin[dat$negative] = dat$errormin[dat$negative]*-1
+  dat$errormax = dat$X97.5
+    dat$errormax[dat$negative] = dat$errormax[dat$negative]*-1
+    
+  
+   plot=
+    ggplot(dat, aes(x=1:nrow(dat), y=abs(original), fill=negative)) + geom_bar(stat="identity")  + 
+      geom_errorbar(aes(ymin=errormin,ymax=errormax)) + 
+    jtools::theme_apa() +
+    coord_flip() + labs(y=NULL,x="") + theme(legend.position = "none") + scale_fill_manual(values=c( "#1B9E77", "#D95F02")) + 
+    scale_x_continuous(breaks=1:nrow(dat),labels=dat$FancyLabels) +
+    theme(text=element_text(family="serif")) + 
+     geom_hline(aes( alpha=.9, yintercept=.1), linetype="dashed", col="grey") + 
+    geom_hline(aes( alpha=.9, yintercept=0), linetype="dashed") + 
+     labs(title=titletext)
+   
+  plot
+  # facet_wrap(~Group,strip.position = "top", scales = "free", nrow=1, ncol=2) + theme(panel.spacing = unit(.3, "cm"), strip.background = element_blank()) +
+  #  scale_x_continuous(breaks=1:nrow(dat),labels=dat$FancyLabels) 
+  # 
+  return(plot)
+}
+
+
+```
+
+
+```{r, fig.height=13, fig.width=9}
+
+p1 = PlotLoadings(cca_boot$xcoef_Quantiles[[1]], titletext = "ERF CCA Weights Comp1")
+p2 = PlotLoadings(cca_boot$xcoef_Quantiles[[2]], titletext = "ERF CCA Weights Comp2")
+p3 = PlotLoadings(cca_boot$xcoef_Quantiles[[3]], titletext = "ERF CCA Weights Comp3")
+
+p4 = PlotLoadings(cca_boot$ycoef_Quantiles[[1]], titletext = "Outcome CCA Weights Comp1")
+p5 = PlotLoadings(cca_boot$ycoef_Quantiles[[2]], titletext = "Outcome CCA Weights Comp2")
+p6 = PlotLoadings(cca_boot$ycoef_Quantiles[[3]], titletext = "Outcome CCA Weights Comp3")
+
+library(patchwork)
+LoadingPlot = p1 + p2 + p3 + p4 + p5 + p6 + patchwork::plot_layout(ncol = 2, byrow = FALSE)
+LoadingPlot 
+ggsave(filename=file.path("Plots","LoadingsPlots_group1.pdf"),  LoadingPlot, device="pdf", width=9, height=13)
+ggsave(filename=file.path("Plots","LoadingsPlots_group1.png"),  LoadingPlot, device="png", width=9, height=13, dpi=600)
+
+rm(p1,p2,p3,p4,p5,p6,LoadingPlot)
+```
+
+### Supplementary Figure 3
+
+```{r, fig.height=13, fig.width=9}
+
+# cca_splithalf_procrustes$model_results
+
+p1 = PlotLoadings(cca_boot_teach$xcoef_Quantiles[[1]], titletext = "ERF CCA Weights Comp1")
+p2 = PlotLoadings(cca_boot_teach$xcoef_Quantiles[[2]], titletext = "ERF CCA Weights Comp2")
+p3 = PlotLoadings(cca_boot_teach$xcoef_Quantiles[[3]], titletext = "ERF CCA Weights Comp3")
+
+p4 = PlotLoadings(cca_boot_teach$ycoef_Quantiles[[1]], titletext = "Outcome CCA Weights Comp1")
+p5 = PlotLoadings(cca_boot_teach$ycoef_Quantiles[[2]], titletext = "Outcome CCA Weights Comp2")
+p6 = PlotLoadings(cca_boot_teach$ycoef_Quantiles[[3]], titletext = "Outcome CCA Weights Comp3")
+
+library(patchwork)
+LoadingPlot = p1 + p2 + p3 + p4 + p5 + p6 + patchwork::plot_layout(ncol = 2, byrow = FALSE)
+LoadingPlot 
+ggsave(filename=file.path("Plots","LoadingsPlots_teach.pdf"),  LoadingPlot, device="pdf", width=9, height=13)
+ggsave(filename=file.path("Plots","LoadingsPlots_teach.png"),  LoadingPlot, device="png", width=9, height=13, dpi=600)
+
+```
+
+
+
+## Stacked bar chart figure  
+
+### Figure 3
+
+```{r}
+
+PlotData = data.frame(cca_splithalf_procrustes$R2_matrix_BinaryOutcomes_Combined)
+    PlotData[PlotData<0] = 0
+    PlotData$Var = rownames(PlotData)
+    PlotData = melt(PlotData,ID="Var")
+    PlotData$variable = factor(PlotData$variable)
+    PlotData$Cluster = (Outcome_Cluster_Labels2[match(PlotData$Var,outcomes2)])
+    PlotData$Cluster[PlotData$Cluster=="Behavioural Problems"] = "Behav. Problems"
+    PlotData$Cluster = factor(PlotData$Cluster)
+    PlotData$Var = factor(PlotData$Var, levels=Outcome_Ordered2, labels=Outcome_Labels_Ordered2)
+  #Fill Colour
+FillCol = c(as.vector(  RColorBrewer::brewer.pal(5,"Dark2")), as.vector(wesanderson::wes_palette("Darjeeling1",n=5)))
+
+PLOT3=
+    ggplot(data=PlotData, aes(x=Var,y=value, fill=variable, group=Cluster)) + 
+      geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="LM_R2",], fill="black") + 
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc10",], fill=FillCol[10]) + 
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc9",], fill=FillCol[9]) +        
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc8",], fill=FillCol[8]) + 
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc7",], fill=FillCol[7]) + 
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc6",], fill=FillCol[6]) + 
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc5",], fill=FillCol[5]) + 
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc4",], fill=FillCol[4]) + 
+      geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc3",], fill=FillCol[3]) + 
+      geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc2",], fill=FillCol[1]) + 
+      geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc1",], fill=FillCol[2]) + 
+    labs(y=bquote('Variance Explained'~(r^2)), x="Outcome Variables") +
+    facet_wrap(~Cluster,strip.position = "top", scales = "free_x", nrow=1) + theme(panel.spacing = unit(0, "cm"), strip.background = element_blank()) +
+    jtools::theme_apa()+
+    theme(axis.title.y.right = element_blank(),                # hide right axis title
+          axis.text.y.right = element_blank(),                 # hide right axis labels
+          axis.ticks.x = element_blank(),                      # hide left/right axis ticks
+          axis.text.y = element_text(margin = margin(r = 0)),  # move left axis labels closer to axis
+          #panel.spacing = unit(10, "mm"),                     # remove spacing between facets
+          strip.background = element_blank(),                  # match default line size of theme_classic
+          legend.position = "none",
+          axis.text.x = element_text(angle = 90,hjust=0.95,vjust=0.2),
+          text=element_text(family="serif")
+    ) +
+    scale_fill_manual(labels = unique(PlotData$variable),values=c( wesanderson::wes_palette("BottleRocket2",n=5),wesanderson::wes_palette("Darjeeling1",n=5)    )) +
+    scale_y_continuous(breaks=c(0,5,10,15)/100, labels=c("0%","5%", "10%", "15%"))
+
+
+ggsave(filename=file.path("Plots","VarianceExplained1.pdf"),  PLOT3, device="pdf", width=6, height=4)
+ggsave(filename=file.path("Plots","VarianceExplained1.png"),  PLOT3, device="png", width=6, height=4, dpi=600)
+
+PLOT3 #+ ylim(c(0,.19))
+
+```
+
+#### Supplementary Figure 4
+
+```{r}
+PlotData = data.frame(cca_splithalf_teacher$R2_matrix_BinaryOutcomes_Combined)
+    PlotData[PlotData<0] = 0
+    PlotData$Var = rownames(PlotData)
+    PlotData = melt(PlotData,ID="Var")
+    PlotData$variable = factor(PlotData$variable)
+    PlotData$Cluster = (Outcome_Cluster_Labels2[match(PlotData$Var,outcomes2)])
+    PlotData$Cluster[PlotData$Cluster=="Behavioural Problems"] = "Behav. Problems"
+    PlotData$Cluster = factor(PlotData$Cluster)
+    PlotData$Var = factor(PlotData$Var, levels=Outcome_Ordered2, labels=Outcome_Labels_Ordered2)
+
+#Fill Colour
+FillCol = c(as.vector(  RColorBrewer::brewer.pal(5,"Dark2")), as.vector(wesanderson::wes_palette("Darjeeling1",n=5)))
+
+PLOT3=
+    ggplot(data=PlotData, aes(x=Var,y=value, fill=variable, group=Cluster)) + 
+      geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="LM_R2",], fill="black") + 
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc10",], fill=FillCol[10]) + 
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc9",], fill=FillCol[9]) +        
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc8",], fill=FillCol[8]) + 
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc7",], fill=FillCol[7]) + 
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc6",], fill=FillCol[6]) + 
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc5",], fill=FillCol[5]) + 
+      # geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc4",], fill=FillCol[4]) + 
+      geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc3",], fill=FillCol[3]) + 
+      geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc2",], fill=FillCol[1]) + 
+      geom_bar(position="identity",stat="identity", alpha=1, data=PlotData[PlotData$variable=="cc1",], fill=FillCol[2]) + 
+    labs(y=bquote('Variance Explained'~(r^2)), x="Outcome Variables") +
+    facet_wrap(~Cluster,strip.position = "top", scales = "free_x", nrow=1) + theme(panel.spacing = unit(0, "cm"), strip.background = element_blank()) +
+    jtools::theme_apa()+
+    theme(axis.title.y.right = element_blank(),                # hide right axis title
+          axis.text.y.right = element_blank(),                 # hide right axis labels
+          axis.ticks.x = element_blank(),                      # hide left/right axis ticks
+          axis.text.y = element_text(margin = margin(r = 0)),  # move left axis labels closer to axis
+          #panel.spacing = unit(10, "mm"),                       # remove spacing between facets
+          strip.background = element_blank(),         # match default line size of theme_classic
+          legend.position = "none",
+          axis.text.x = element_text(angle = 90,hjust=0.95,vjust=0.2),
+          text=element_text(family="serif")
+    ) +
+    scale_fill_manual(labels = unique(PlotData$variable),values=c( wesanderson::wes_palette("BottleRocket2",n=5),wesanderson::wes_palette("Darjeeling1",n=5)    )) + 
+  scale_y_continuous(breaks=c(0,5,10,15)/100, labels=c("0%","5%", "10%", "15%"))
+
+ggsave(filename=file.path("Plots","VarianceExplained_teach.pdf"),  PLOT3, device="pdf", width=8, height=4)
+ggsave(filename=file.path("Plots","VarianceExplained_teach.png"),  PLOT3, device="png", width=8, height=4, dpi=600)
+
+PLOT3 #+ ylim(c(0,.19))
+
+```
+
+
+# Supplementary Figure 2 
+
+```{r}
+
+# apply(A3_teach$R2_matrix,2,mean)
+# apply(A3_teach$R2_matrix,2,mean)
+
+
+
+
+
+```
+
+
+#### Variance Explained in each outcome tables
+
+Correlation Confidence Interval Fucntion 
+
+```{r}
+
+.CorrelationCIEstimator = function(r, n, alpha=0.05){
+  Fr = base::atanh(r)                 # Fisher Z Transform
+  SE = 1/((n-3)^.5)             # Standard Error
+  CI = stats::qnorm(c(alpha/2,1-alpha/2), mean=Fr, sd=SE)
+  CI = base::tanh(CI)
+  # p  = (1-pnorm(abs(Fr), mean=0, sd=SE))*2    # Fisher Z P value
+  t = r*base::sqrt((n-2)/(1-r^2))       # P-value estimated from t-distribution
+  p  = (1-stats::pt(base::abs(t), df=n-2))*2
+  return(base::list(CI=CI,p=p))
+}
+
+```
+
+
+### Table 2
+
+Variance Explained for each outcome variables
+
+```{r}
+
+absSquare = function(x){
+  neg = x<0
+  out = x^2
+  out[neg] = out[neg]*-1
+  return(out)
+}
+
+
+
+cc1 = cca_splithalf_procrustes$R2_matrix_BinaryOutcomes_Combined$cc1
+# First CCA variate
+# cc1_CI_LB = sapply(cc1, function(x) 
+#                .CorrelationCIEstimator(x^.5, n=nrow(df0_imputed_group2), alpha=0.05)$CI[1])  #Need to convert R2 to R, which x^2 is used
+# cc1_CI_UB = sapply(cc1, function(x) 
+#                .CorrelationCIEstimator(x^.5, n=nrow(df0_imputed_group2), alpha=0.05)$CI[2])
+
+# Second CCA variate
+cc2 = cca_splithalf_procrustes$R2_matrix_BinaryOutcomes_Combined$cc2 
+# cc2_CI_LB = sapply(cc2, function(x) 
+#                .CorrelationCIEstimator(x^.5, n=nrow(df0_imputed_group2), alpha=0.05)$CI[1])
+# cc2_CI_UB = sapply(cc2, function(x) 
+#                .CorrelationCIEstimator(x^.5, n=nrow(df0_imputed_group2), alpha=0.05)$CI[2])
+
+# Third CCA variate
+cc3 = cca_splithalf_procrustes$R2_matrix_BinaryOutcomes_Combined$cc3
+# cc3_CI_LB = sapply(cc3, function(x) 
+#                .CorrelationCIEstimator(x^.5, n=nrow(df0_imputed_group2), alpha=0.05)$CI[1])
+# cc3_CI_UB = sapply(cc3, function(x) 
+#                .CorrelationCIEstimator(x^.5, n=nrow(df0_imputed_group2), alpha=0.05)$CI[2])
+
+# Variance Explained by Linear MOdel
+LM_VE = cca_splithalf_procrustes$R2_matrix_BinaryOutcomes_Combined$LM_R2
+
+
+Table2 = 
+cbind.data.frame(cc1, #absSquare(cc1_CI_LB), absSquare(cc1_CI_UB),
+                 cc2, #absSquare(cc2_CI_LB), absSquare(cc2_CI_UB),
+                 cc3, #absSquare(cc3_CI_LB), absSquare(cc3_CI_UB),
+                 LM_VE
+                 )
+
+AverageVE = apply(Table2, 2, mean)
+Table2 = rbind.data.frame(Table2, AverageVE)
+  
+Table2 %>% 
+          # format(.,nsmall=3, digits=0) %>%
+          # mutate_all(.,str_replace_all, pattern = "0\\.", replacement="\\.") %>%
+          dplyr::slice(c(Outcome_Order,23)) %>% 
+          `rownames<-`(c(Outcome_Labels_Ordered, "Mean")) %>% 
+          `colnames<-`(c("cc1","cc2","cc3","LM")) %>%
+          knitr::kable(digits=3)
+
+Table2 %>%
+          dplyr::slice(c(Outcome_Order,23)) %>% 
+          `rownames<-`(c(Outcome_Labels_Ordered, "Mean")) %>% 
+          `colnames<-`(c("cc1","cc2","cc3","LM")) %>%
+          format(., digits=0, nsmall=3) %>%
+          apply(., 2, function(x) sub("0\\.","\\.",x, perl=TRUE)) %>%
+          write.csv(., file=file.path("Output R Data", "Table2.csv"), row.names = TRUE)
+
+        
+
+
+rm(cc1,#cc1_CI_LB,cc1_CI_UB,
+   cc2,#cc2_CI_LB,cc2_CI_UB,
+   cc3,#cc3_CI_LB,cc3_CI_UB,
+  LM_VE
+  )
+
+```
+
+
+
+```{r}
+
+format(cca_splithalf_procrustes$R2_matrix_BinaryOutcomes_Combined, digits=0, nsmall=4)[,c(1:4,22,23)]
+
+# format(cca_splithalf_teacher$R2_matrix_unbiased, digits=0, nsmall=4)[,c(1:4,23)]
+
+
+```
+
+```{r}
+
+apply(cca_splithalf_procrustes$R2_matrix_BinaryOutcomes_Combined,1,which.max)
+
+
+
+```
+
+
+### Table 2 - Including Teacher Data
+
+Variance Explained for each outcome variables - TEACHER DATA INCLUDED
+
+```{r}
+
+cc1 = cca_splithalf_teacher$R2_matrix_BinaryOutcomes_Combined$cc1
+# First CCA variate
+# cc1_CI_LB = sapply(cc1, function(x) 
+#                .CorrelationCIEstimator(x^.5, n=nrow(df0_imputed_Teach_group2), alpha=0.05)$CI[1])
+# cc1_CI_UB = sapply(cc1, function(x) 
+#                .CorrelationCIEstimator(x^.5, n=nrow(df0_imputed_Teach_group2), alpha=0.05)$CI[2])
+
+# Second CCA variate
+cc2 = cca_splithalf_teacher$R2_matrix_BinaryOutcomes_Combined$cc2 
+# cc2_CI_LB = sapply(cc2, function(x) 
+#                .CorrelationCIEstimator(x^.5, n=nrow(df0_imputed_Teach_group2), alpha=0.05)$CI[1])
+# cc2_CI_UB = sapply(cc2, function(x) 
+#                .CorrelationCIEstimator(x^.5, n=nrow(df0_imputed_Teach_group2), alpha=0.05)$CI[2])
+
+# Third CCA variate
+cc3 = cca_splithalf_teacher$R2_matrix_BinaryOutcomes_Combined$cc3
+# cc3_CI_LB = sapply(cc3, function(x) 
+#                .CorrelationCIEstimator(x^.5, n=nrow(df0_imputed_Teach_group2), alpha=0.05)$CI[1])
+# cc3_CI_UB = sapply(cc3, function(x) 
+#                .CorrelationCIEstimator(x^.5, n=nrow(df0_imputed_Teach_group2), alpha=0.05)$CI[2])
+
+# Variance Explained by Linear MOdel
+LM_VE = cca_splithalf_teacher$R2_matrix_BinaryOutcomes_Combined$LM_R2
+
+
+Table2 = 
+cbind.data.frame(cc1, 
+                 cc2, 
+                 cc3,
+                 LM_VE
+                 )
+
+AverageVE = apply(Table2, 2, mean)
+Table2 = rbind.data.frame(Table2, AverageVE)
+  
+Table2 %>% 
+          # format(.,nsmall=3, digits=0) %>%
+          # mutate_all(.,str_replace_all, pattern = "0\\.", replacement="\\.") %>%
+          dplyr::slice(c(match(Outcome_Ordered2, outcomes2),29)) %>% 
+          `rownames<-`(c(Outcome_Labels_Ordered2, "Mean")) %>% 
+          `colnames<-`(c("cc1","cc2","cc3","LM")) %>%
+          knitr::kable(digits=3)
+
+
+
+        
+
+
+rm(cc1,#cc1_CI_LB,cc1_CI_UB,
+   cc2,#cc2_CI_LB,cc2_CI_UB,
+   cc3,#cc3_CI_LB,cc3_CI_UB,
+  LM_VE
+  )
+
+```
+
+
+### Supplementary Alcohol Plots
+
+```{r}
+
+  load(file.path("Data","MCS Data","Processed Data","DataWithExclusionsNoImputations","df0_BothGroups_FINAL.Rdata"))
+  
+  ##SES and alcohol use - SUPPLEMENTARY MATERIALS
+  #Recode variables so that higher alcohol use is greater, and normalise vars
+    df0$S1_Parent_AlcoholCurrent_REVERSED = (Convert(df0$S1_Parent_AlcoholCurrent,1:7,7:1))
+    df0$S1_Parent_AlcoholPregnant_REVERSED = (Convert(df0$S1_Parent_AlcoholPregnant,1:7,7:1))
+    
+    df0$S1_Parent_AlcoholCurrent_REVERSED_NORM = (Convert(df0$S1_Parent_AlcoholCurrent,1:7,7:1))
+    df0$S1_Parent_AlcoholPregnant_REVERSED_NORM = (Convert(df0$S1_Parent_AlcoholPregnant,1:7,7:1))
+  
+  # brewer.pal(n = 4, name = "Dark2")
+  
+  # Parents and children's alcohol consumption (without using normed data)
+  # ggplot(data=df0, aes(y=S1_SES_EquivIncome_Norm,x=S1_Parent_AlcoholCurrent_REVERSED)) + geom_hline(yintercept=0, linetype="dashed", col="grey") + geom_smooth(method="lm", se=FALSE, col="grey") + geom_jitter(aes(y=S1_SES_EquivIncome_Norm,x=S1_Parent_AlcoholCurrent_REVERSED-.4),width=.1, height=0, alpha=.2) + 
+  #   jtools::theme_apa() + scale_x_continuous(breaks=1:7, labels = c("Never", "<1 Month","1-2 Times a Month","1-2 Times a Week","3-4 Times a Week","5-6 Times a Week", "Every Day")) + 
+  #   geom_boxplot(aes(group=S1_Parent_AlcoholCurrent_REVERSED),col="black", fill="#1B9E77", outlier.shape = NA, width = .2, position = position_dodge(width = 0.75), notch = TRUE) + 
+  #   coord_flip() + labs(y="Equivilised Income (ADOEDE00) Normalised",x="Alcohol Consumption After Pregnancy (amaldr00)")
+  # 
+  #   
+  # ggplot(data=df0, aes(y=S1_SES_EquivIncome_Norm,x=S1_Parent_AlcoholPregnant_REVERSED)) + geom_hline(yintercept=0, linetype="dashed", col="grey") + geom_smooth(method="lm", se=FALSE, col="grey") + geom_jitter(aes(y=S1_SES_EquivIncome_Norm,x=S1_Parent_AlcoholPregnant_REVERSED-.4),width=.1, height=0, alpha=.2) + 
+  #   jtools::theme_apa() + scale_x_continuous(breaks=1:7, labels = c("Never", "<1 Month","1-2 Times a Month","1-2 Times a Week","3-4 Times a Week","5-6 Times a Week", "Every Day")) + 
+  #   geom_boxplot(aes(group=S1_Parent_AlcoholPregnant_REVERSED),col="black", fill="#D95F02", outlier.shape = NA, width = .2, position = position_dodge(width = 0.75), notch = TRUE) + 
+  #   coord_flip() + labs(y="Equivilised Income (ADOEDE00) Normalised",x="Alcohol Consumption During Pregnancy (amdrof00)") 
+  
+  # Alcohol Consumption after pregnancy and family income
+  p1=
+  ggplot(data=df0, aes(y=S1_SES_EquivIncome_Norm,x=S1_Parent_AlcoholCurrent_REVERSED)) + geom_hline(yintercept=0, linetype="dashed", col="grey")  + 
+    geom_smooth(aes( y=S1_SES_EquivIncome_Norm,x=S1_Parent_AlcoholCurrent_REVERSED_NORM), method="lm", se=FALSE, col="grey") +
+    geom_jitter(aes(y=S1_SES_EquivIncome_Norm,x=S1_Parent_AlcoholCurrent_REVERSED_NORM-.35),width=.095, height=0, alpha=.2) + 
+    jtools::theme_apa() + 
+    scale_x_continuous(breaks=sort(na.omit(unique(df0$S1_Parent_AlcoholCurrent_REVERSED_NORM))), labels = c("Never", "<1 Month","1-2 Times a Month","1-2 Times a Week","3-4 Times a Week","5-6 Times a Week", "Every Day")) + 
+    geom_boxplot(aes(group=S1_Parent_AlcoholCurrent_REVERSED_NORM, y=S1_SES_EquivIncome_Norm,x=S1_Parent_AlcoholCurrent_REVERSED_NORM),col="black", fill="#1B9E77", outlier.shape = NA, width = .18, position = position_dodge(width = 0.75), notch = TRUE) + 
+    coord_flip() + labs(y="Equivilised Income (ADOEDE00) Normalised",x="Alcohol Consumption After Pregnancy (amaldr00)") +
+    ggtitle("A")
+  
+  # Alcohol Consumption DURING pregnancy and family income
+  p2=
+  ggplot(data=df0, aes(y=S1_Parent_AlcoholCurrent_REVERSED_NORM,x=S1_Parent_AlcoholPregnant_REVERSED_NORM)) + geom_hline(yintercept=0, linetype="dashed", col="grey")  + 
+    geom_smooth(aes( y=S1_SES_EquivIncome_Norm,x=S1_Parent_AlcoholPregnant_REVERSED_NORM), method="lm", se=FALSE, col="grey") +
+    geom_jitter(aes(y=S1_SES_EquivIncome_Norm,x=S1_Parent_AlcoholPregnant_REVERSED_NORM-.35),width=.095, height=0, alpha=.2) + 
+    jtools::theme_apa() + 
+    scale_x_continuous(breaks=sort(na.omit(unique(df0$S1_Parent_AlcoholPregnant_REVERSED_NORM))), labels = c("Never", "<1 Month","1-2 Times a Month","1-2 Times a Week","3-4 Times a Week","5-6 Times a Week", "Every Day")) + 
+    geom_boxplot(aes(group=S1_Parent_AlcoholPregnant_REVERSED_NORM, y=S1_SES_EquivIncome_Norm,x=S1_Parent_AlcoholPregnant_REVERSED_NORM),col="black", fill="#1B9E77", outlier.shape = NA, width = .18, position = position_dodge(width = 0.75), notch = TRUE) + 
+    coord_flip() + labs(y="Equivilised Income (ADOEDE00) Normalised",x="Alcohol Consumption During Pregnancy (amdrof00)") +
+    ggtitle("B")
+  
+  #Parent and children's alcohol
+  df0$S6_RiskyBehaviours_Alcohol_factor = factor(df0$S6_RiskyBehaviours_Alcohol, levels=c(0,1),labels=c("Drunk Alcohol","Not Drunk Alcohol")) #factorise children's alcohol consumption for simpler plotting
+  
+  #Tables used to add count information to plots
+  Table_1 = table(df0$S6_RiskyBehaviours_Alcohol_factor, df0$S1_Parent_AlcoholCurrent_REVERSED_NORM)
+    Table_1 = melt(Table_1)
+    Table_1$y = rep(c(.85,.15),7)
+  Table_2 = table(df0$S6_RiskyBehaviours_Alcohol_factor, df0$S1_Parent_AlcoholPregnant_REVERSED_NORM)
+    Table_2 = melt(Table_2)
+    Table_2$y = rep(c(.85,.15),7)
+    
+  #Parent alcohol consumption after pregnancy and CHILDREN"S consumption
+  p3=
+  ggplot(data=df0[!is.na(df0$S6_RiskyBehaviours_Alcohol),], aes(x=(S1_Parent_AlcoholCurrent_REVERSED_NORM), fill=S6_RiskyBehaviours_Alcohol_factor)) + 
+    geom_bar(position="fill",stat="count", width=.4) + 
+    scale_x_continuous(breaks=sort(na.omit(unique(df0$S1_Parent_AlcoholCurrent_REVERSED_NORM))), labels = c("Never", "<1 Month","1-2 Times a Month","1-2 Times a Week","3-4 Times a Week","5-6 Times a Week", "Every Day")) +
+    jtools::theme_apa() + theme(axis.text.x = element_text(angle = 90)) +
+    labs(x="Alcohol Consumption After Pregnancy (amaldr00)", y = "Children's Alcohol Consumption (Pink = Never)") + 
+    geom_text(data=Table_1,aes(y=y,x=Var2,fill=NULL,label=value), angle=90) + theme(legend.position = "none") + 
+    scale_fill_manual(values = c("#1B9E77", "#E7298A"))+
+    scale_y_continuous(breaks=seq(0,1,by=.25), labels=c("0%","25%","50%","75%","100%")) +
+    ggtitle("C")
+    
+  #Parent alcohol consumption during pregnancy and CHILDREN"S consumption
+  p4=
+  ggplot(data=df0[!is.na(df0$S6_RiskyBehaviours_Alcohol),], aes(x=(S1_Parent_AlcoholPregnant_REVERSED_NORM), fill=S6_RiskyBehaviours_Alcohol_factor)) + 
+    geom_bar(position="fill",stat="count", width=.4) + 
+    scale_x_continuous(breaks=sort(na.omit(unique(df0$S1_Parent_AlcoholPregnant_REVERSED_NORM))), labels = c("Never", "<1 Month","1-2 Times a Month","1-2 Times a Week","3-4 Times a Week","5-6 Times a Week", "Every Day")) +
+    jtools::theme_apa() + theme(axis.text.x = element_text(angle = 90)) +
+    labs(x="Alcohol Consumption During Pregnancy (amdrof00)", y = "Children's Alcohol Consumption (Pink = Never)")+
+    geom_text(data=Table_2,aes(y=y,x=Var2,fill=NULL,label=value), angle=90) + theme(legend.position = "none") +
+    scale_fill_manual(values = c("#1B9E77", "#E7298A"))+
+    scale_y_continuous(breaks=seq(0,1,by=.25), labels=c("0%","25%","50%","75%","100%")) +
+    ggtitle("D")
+  
+  
+  # Combine plots
+
+  p1 + p2 + p3 + p4
+  
+  ggsave(file="Plots/Alcohol_SupplementaryFigure.png", device="png", width = 15, height = 10)
+  pdf(file="Plots/Alcohol_SupplementaryFigure.pdf", width=15, height=10)
+  p1 + p3 + p2 + p4
+  dev.off()
+    
+
+```
