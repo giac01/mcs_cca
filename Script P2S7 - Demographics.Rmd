@@ -1,6 +1,10 @@
 ---
 title: "Demographic Information"
-output: html_notebook
+output:
+  pdf_document: default
+  html_notebook: default
+  html_document:
+    df_print: paged
 ---
 
 ## Load Data
@@ -10,6 +14,7 @@ output: html_notebook
 
 library(patchwork)
 library(tidyverse)
+library(knitr)
 # library(ggplot2)
 
 rm(list=ls())
@@ -175,9 +180,10 @@ EthnicityTbl =
     table() %>% 
     data.frame() %>%
     dplyr::arrange(Freq) %>%
-    dplyr::mutate(Percent = format(Freq/sum(Freq), nsmall=4,digits=0))
+    dplyr::mutate(Percent = Freq/sum(Freq)*100)
 
-EthnicityTbl
+EthnicityTbl  %>%
+  kable(., digits = 2)
 
 ```
 
@@ -219,7 +225,8 @@ Age_Matrix %>%
   dplyr::group_by(name) %>%
   summarise(mean=mean(Age, na.rm=TRUE), 
             sd=sd(Age, na.rm=TRUE), 
-            N_NotMissing = length(which(!is.na(Age))))
+            N_NotMissing = length(which(!is.na(Age)))) %>%
+  kable(., digits=3)
 
 
 
@@ -243,10 +250,9 @@ df0_BothGroups %>%
                    N_Female = length(which(S2_Sex_bhcsex00==2)),
                    Percent_Male = N_Male /(N_Male + N_Female),
                    Percent_Female = N_Female /(N_Male + N_Female)
-                   )
-  
-  table(.) %>%
-  `names<-` (c("male", "female"))
+                   ) 
+  # table(.) %>%
+  # `names<-` (c("male", "female"))
 
 ```
 
@@ -256,7 +262,7 @@ df0_BothGroups %>%
 Interview Country
 
 ```{r}
-S1Geo = fread("Data/MCS Data/Raw Data/UKDA-4683-tab MCS1/tab/mcs1_geographically_linked_data.tab", stringsAsFactors = FALSE, data.table = FALSE)
+S1Geo = data.table::fread("Data/MCS Data/Raw Data/UKDA-4683-tab MCS1/tab/mcs1_geographically_linked_data.tab", stringsAsFactors = FALSE, data.table = FALSE)
 S1Geo = S1Geo[match(df0_BothGroups$MCSID, S1Geo$mcsid),]
 
 S1Geo %>%
@@ -267,7 +273,7 @@ S1Geo %>%
                 `4` = "Northern Ireland")) %>%
   group_by(country_new) %>% 
   summarise(N=n()) %>% 
-  mutate(Perc = round(N/sum(N), digits=4))
+  mutate(Perc = round(N/sum(N)*100, digits=2))
 
 ```
 
@@ -345,7 +351,7 @@ S2_Qualifications
 
 ```{r}
 
-S1Der = fread("Data/MCS Data/Raw Data/UKDA-4683-tab MCS1/tab/mcs1_derived_variables.tab", stringsAsFactors = FALSE, data.table = FALSE)
+S1Der = data.table::fread("Data/MCS Data/Raw Data/UKDA-4683-tab MCS1/tab/mcs1_derived_variables.tab", stringsAsFactors = FALSE, data.table = FALSE)
 S1Der = S1Der[match(df0_BothGroups$MCSID, S1Der$MCSID),]
 
 S1Der %>%
@@ -379,13 +385,23 @@ S1Der$AMD07C00 %>%
 
 ```
 
-
-# Proportion of productive families in S5 & S6 excluded from analyses
+### Proportion of drug use in samples
 
 ```{r}
 
 
+drug_vars = c("S6_RiskyBehaviours_Cig","S6_RiskyBehaviours_ECig","S6_RiskyBehaviours_Alcohol","S6_RiskyBehaviours_Cannabis")
 
+df0_BothGroups %>%
+  dplyr::select(drug_vars) %>% 
+  apply(.,2, table) %>% 
+  kable(., caption="Frequecnies of Drug Use")
+
+df0_BothGroups %>%
+  dplyr::select(drug_vars) %>% 
+  apply(.,2, table) %>% 
+  apply(.,2, function(x) x/sum(x)) %>%
+  kable(., caption="Frequecnies of Drug Use", digits=2)
 
 
 ```

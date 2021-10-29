@@ -86,7 +86,7 @@ envvar_labels = c(
   "PR1 Parent Literacy Problems",
   "PR1 Housing Quality",
   "OR2 Housing Quality",
-  "OR2 Parent Rating",
+  "OR2 Parent Responsivity",
   "PR2 Home Learning Environment",
   "PR2 Recreational Drug Use",
   "PR2 Harsh Parenting",

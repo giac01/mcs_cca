@@ -392,12 +392,12 @@ df0_teach_group2 = df0_group2
   
   
 #### Normalise Data
-  df0_group1[,all_var]            = apply(df0_group1[,all_var],2,Normalise)
-  df0_group2[,all_var]            = apply(df0_group2[,all_var],2,Normalise)
-  df0_BothGroups[,all_var]        = apply(df0_BothGroups[,all_var],2,Normalise)
-  df0_teach_bothgroups[,all_var2] = apply(df0_teach_bothgroups[,all_var2],2,Normalise)
-  df0_teach_group1[,all_var2]     = apply(df0_teach_group1[,all_var2],2,Normalise)
-  df0_teach_group2[,all_var2]     = apply(df0_teach_group2[,all_var2],2,Normalise)
+  df0_group1[,all_var]            = apply(df0_group1[,all_var],2, function(x) map_normal(x, MinDim=10, rescale = TRUE, signif_digits = 8))
+  df0_group2[,all_var]            = apply(df0_group2[,all_var],2, function(x) map_normal(x, MinDim=10, rescale = TRUE, signif_digits = 8))
+  df0_BothGroups[,all_var]        = apply(df0_BothGroups[,all_var],2, function(x) map_normal(x, MinDim=10, rescale = TRUE, signif_digits = 8))
+  df0_teach_bothgroups[,all_var2] = apply(df0_teach_bothgroups[,all_var2],2, function(x) map_normal(x, MinDim=10, rescale = TRUE, signif_digits = 8))
+  df0_teach_group1[,all_var2]     = apply(df0_teach_group1[,all_var2],2, function(x) map_normal(x, MinDim=10, rescale = TRUE, signif_digits = 8))
+  df0_teach_group2[,all_var2]     = apply(df0_teach_group2[,all_var2],2, function(x) map_normal(x, MinDim=10, rescale = TRUE, signif_digits = 8))
   
 #### Impute Missing Data
   data.frame(sort(apply(df0_BothGroups[,all_var],2,function(x) length(which(!is.na(x))))))
@@ -475,6 +475,7 @@ df0_teach_group2 = df0_group2
   write.csv(df0_imputed_Teach_BothGroups, file=file.path(OUPUTDATA_LOCATION,"df0_imputed_Teach_BothGroups_FINAL.csv"))
   write.csv(df0_imputed_Teach_group1, file=file.path(OUPUTDATA_LOCATION,"df0_imputed_Teach_group1_FINAL.csv"))
   write.csv(df0_imputed_Teach_group2, file=file.path(OUPUTDATA_LOCATION,"df0_imputed_Teach_group2_FINAL.csv"))
+  
   
   
   
